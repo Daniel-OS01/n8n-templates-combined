@@ -1,0 +1,216 @@
+{
+  "name": "Telegram: Hebrew OCR Bot (Tesseract/Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "events": "message:photo",
+        "options": {}
+      },
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        40,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "fileId": "={{$json.message.photo[$json.message.photo.length-1].file_id}}"
+      },
+      "name": "Get File Path",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        260,
+        360
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "={{$env.N8N_TELEGRAM_API_KEY_ID}}",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/file/bot{{$credentials.telegramApi.token}}/{{$node[\"Get File Path\"].json.result.file_path}}",
+        "responseFormat": "file",
+        "options": {}
+      },
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        460,
+        360
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "={{$env.N8N_TELEGRAM_API_KEY_ID}}",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "tesseract stdin stdout -l heb --psm 4",
+        "options": {}
+      },
+      "name": "Tesseract OCR",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        680,
+        240
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$node[\"Tesseract OCR\"].error !== undefined || $node[\"Tesseract OCR\"].json.stdout === \"\"}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Tesseract Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        880,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent",
+        "options": {
+          "queryParameters": {
+            "key": "={{$credentials.googleApi.apiKey}}"
+          }
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{JSON.stringify({\n  \"contents\": [\n    {\n      \"parts\": [\n        { \"text\": \"Extract all Hebrew text from this image. Preserve formatting and line breaks.\" },\n        {\n          \"inline_data\": {\n            \"mime_type\": $node[\"Download Image\"].binary.data.mimeType,\n            \"data\": $node[\"Download Image\"].binary.data.data\n          }\n        }\n      ]\n    }\n  ]\n})}}",
+        "responseFormat": "json"
+      },
+      "name": "Gemini Vision Fallback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1080,
+        480
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "={{$env.N8N_GOOGLE_API_KEY_ID}}",
+          "name": "Google API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$startNode.json.message.chat.id}}",
+        "text": "={{ ($node[\"Tesseract OCR\"].json.stdout || $node[\"Gemini Vision Fallback\"].json.candidates[0].content.parts[0].text).trim() || \"No text found.\" }}",
+        "additionalFields": {
+          "reply_to_message_id": "={{$startNode.json.message.message_id}}"
+        }
+      },
+      "name": "Send Extracted Text",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        360
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "={{$env.N8N_TELEGRAM_API_KEY_ID}}",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get File Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get File Path": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Tesseract OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tesseract OCR": {
+      "main": [
+        [
+          {
+            "node": "Tesseract Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tesseract Failed?": {
+      "main": [
+        [
+          {
+            "node": "Send Extracted Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gemini Vision Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Vision Fallback": {
+      "main": [
+        [
+          {
+            "node": "Send Extracted Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "3"
+}

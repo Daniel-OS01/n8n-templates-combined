@@ -1,0 +1,235 @@
+{
+  "name": "Telegram: Hebrew Speech-to-Text Bot (Whisper/Groq)",
+  "nodes": [
+    {
+      "parameters": {
+        "chatId": "={{$json.message.chat.id}}",
+        "text": "=Transcription:\n\n{{$node[\"Whisper Transcription\"].json.text || $node[\"Groq Transcription Fallback\"].json.choices[0].message.content}}",
+        "additionalFields": {
+          "reply_to_message_id": "={{$json.message.message_id}}"
+        }
+      },
+      "name": "Send Transcription",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        360
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "={{$env.N8N_TELEGRAM_API_KEY_ID}}",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/file/bot{{$credentials.telegramApi.token}}/{{$node[\"Get File Path\"].json.result.file_path}}",
+        "responseFormat": "file",
+        "options": {}
+      },
+      "name": "Download Voice File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        460,
+        360
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "={{$env.N8N_TELEGRAM_API_KEY_ID}}",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fileId": "={{$json.message.voice.file_id}}"
+      },
+      "name": "Get File Path",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        260,
+        360
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "={{$env.N8N_TELEGRAM_API_KEY_ID}}",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "openAiApi",
+        "model": "whisper-1",
+        "responseFormat": "json",
+        "language": "he",
+        "options": {}
+      },
+      "name": "Whisper Transcription",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        680,
+        240
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "={{$env.N8N_OPENAI_API_KEY_ID}}",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node[\"Whisper Transcription\"].json.text}}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Is Whisper Empty?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        880,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "authentication": "bearerToken",
+        "sendBody": true,
+        "bodyContentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "name": "language",
+              "value": "he"
+            }
+          ]
+        },
+        "options": {
+          "body": {
+            "file": "={{$node[\"Download Voice File\"].binary.data}}"
+          }
+        }
+      },
+      "name": "Groq Transcription Fallback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1080,
+        480
+      ],
+      "credentials": {
+        "httpBearerToken": {
+          "id": "={{$env.N8N_GROQ_API_KEY_ID}}",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "events": "message:voice",
+        "options": {}
+      },
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        40,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get File Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get File Path": {
+      "main": [
+        [
+          {
+            "node": "Download Voice File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Voice File": {
+      "main": [
+        [
+          {
+            "node": "Whisper Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper Transcription": {
+      "main": [
+        [
+          {
+            "node": "Is Whisper Empty?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Whisper Empty?": {
+      "main": [
+        [
+          {
+            "node": "Send Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Groq Transcription Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Transcription Fallback": {
+      "main": [
+        [
+          {
+            "node": "Send Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "1"
+}

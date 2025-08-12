@@ -1,0 +1,144 @@
+{
+  "name": "Telegram: Hebrew Text-to-Speech Bot (Google TTS/ffmpeg)",
+  "nodes": [
+    {
+      "parameters": {
+        "events": "message:text",
+        "options": {}
+      },
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        40,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://texttospeech.googleapis.com/v1/text:synthesize",
+        "options": {
+          "queryParameters": {
+            "key": "={{$credentials.googleApi.apiKey}}"
+          }
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{JSON.stringify({\n  \"input\": {\n    \"text\": $json.message.text\n  },\n  \"voice\": {\n    \"languageCode\": \"he-IL\",\n    \"name\": \"he-IL-Wavenet-C\"\n  },\n  \"audioConfig\": {\n    \"audioEncoding\": \"MP3\"\n  }\n})}}",
+        "responseFormat": "json"
+      },
+      "name": "Google Cloud TTS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        260,
+        360
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "={{$env.N8N_GOOGLE_API_KEY_ID}}",
+          "name": "Google API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const audioBase64 = $json.audioContent;\nconst buffer = Buffer.from(audioBase64, 'base64');\n\n// n8n expects an array of items back\nreturn [\n  {\n    json: {},\n    binary: {\n      data: buffer\n    }\n  }\n];"
+      },
+      "name": "Base64 to Binary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "command": "ffmpeg -i pipe:0 -c:a libopus -b:a 64k -f opus pipe:1",
+        "options": {
+          "executeIn": "shell"
+        }
+      },
+      "name": "Convert MP3 to Opus",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        720,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$startNode.json.message.chat.id}}",
+        "file": "data",
+        "method": "sendVoice",
+        "additionalFields": {
+          "reply_to_message_id": "={{$startNode.json.message.message_id}}"
+        }
+      },
+      "name": "Send Voice Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        940,
+        360
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "={{$env.N8N_TELEGRAM_API_KEY_ID}}",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Google Cloud TTS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Cloud TTS": {
+      "main": [
+        [
+          {
+            "node": "Base64 to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Base64 to Binary": {
+      "main": [
+        [
+          {
+            "node": "Convert MP3 to Opus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert MP3 to Opus": {
+      "main": [
+        [
+          {
+            "node": "Send Voice Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "2"
+}

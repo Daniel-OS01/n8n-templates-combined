@@ -1,0 +1,219 @@
+{
+  "name": "Telegram: Multi-Modal Hebrew Assistant",
+  "nodes": [
+    {
+      "parameters": {
+        "events": "message:text,message:voice,message:photo",
+        "options": {}
+      },
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        40,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "routing": {
+          "rules": {
+            "values": [
+              {
+                "value": "={{$json.message.voice}}",
+                "condition": "isNotEmpty"
+              },
+              {
+                "value": "={{$json.message.photo}}",
+                "condition": "isNotEmpty"
+              },
+              {
+                "value": "={{$json.message.text}}",
+                "condition": "isNotEmpty"
+              }
+            ]
+          },
+          "field": ""
+        }
+      },
+      "name": "Switch Input Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        260,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.STT_WORKFLOW_ID}}"
+      },
+      "name": "Execute STT Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        500,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.OCR_WORKFLOW_ID}}"
+      },
+      "name": "Execute OCR Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        500,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const fs = require('fs');\nconst path = require('path');\n\n// Define the path for the conversation store\n// IMPORTANT: '/home/node/.n8n/local-files/' is a reliable writable path in n8n's docker container\nconst storeDir = path.join(process.env.N8N_USER_FOLDER || '/home/node/.n8n/', 'local-files');\nconst storePath = path.join(storeDir, 'conversation_store.json');\n\n// Ensure the directory exists\nif (!fs.existsSync(storeDir)) {\n  fs.mkdirSync(storeDir, { recursive: true });\n}\n\n// Get chat ID to use as a key\nconst chatId = $json.message.chat.id;\n\nlet store = {};\n// Read existing store if it exists\ntry {\n  if (fs.existsSync(storePath)) {\n    store = JSON.parse(fs.readFileSync(storePath, 'utf8'));\n  }\n} catch (e) {\n  // Handle potential JSON parsing errors for corrupted files\n  console.error('Error reading conversation store:', e);\n  store = {};\n}\n\n// Get history for the current chat, or initialize\nconst history = store[chatId] || [];\n\n// Pass the history to the next node\n$item.json.history = history;\n\nreturn $item;"
+      },
+      "name": "Get Chat History",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+        "options": {
+          "queryParameters": {
+            "key": "={{$credentials.googleApi.apiKey}}"
+          }
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{JSON.stringify({\n  \"contents\": [\n    ...$json.history, // Spread the existing history\n    {\n      \"role\": \"user\",\n      \"parts\": [{ \"text\": $json.message.text }]\n    }\n  ]\n})}}",
+        "responseFormat": "json"
+      },
+      "name": "Gemini Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        720,
+        560
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "={{$env.N8N_GOOGLE_API_KEY_ID}}",
+          "name": "Google API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$startNode.json.message.chat.id}}",
+        "text": "={{$node[\"Gemini Chat\"].json.candidates[0].content.parts[0].text}}",
+        "additionalFields": {
+          "reply_to_message_id": "={{$startNode.json.message.message_id}}"
+        }
+      },
+      "name": "Send Chat Response",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        940,
+        560
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "={{$env.N8N_TELEGRAM_API_KEY_ID}}",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const fs = require('fs');\nconst path = require('path');\n\nconst storeDir = path.join(process.env.N8N_USER_FOLDER || '/home/node/.n8n/', 'local-files');\nconst storePath = path.join(storeDir, 'conversation_store.json');\n\nconst chatId = $json.message.chat.id;\nconst newUserMessage = $json.message.text;\nconst botResponse = $node['Gemini Chat'].json.candidates[0].content.parts[0].text;\n\nlet store = {};\nif (fs.existsSync(storePath)) {\n  try {\n    store = JSON.parse(fs.readFileSync(storePath, 'utf8'));\n  } catch (e) {\n    store = {}; \n  }\n}\n\nif (!store[chatId]) {\n  store[chatId] = [];\n}\n\n// Add the new exchange to the history\nstore[chatId].push({ role: 'user', parts: [{ text: newUserMessage }] });\nstore[chatId].push({ role: 'model', parts: [{ text: botResponse }] });\n\n// Optional: Limit history size to prevent the file from growing indefinitely\nconst maxHistory = 20; // Keep last 10 exchanges (user + model)\nif (store[chatId].length > maxHistory) {\n  store[chatId] = store[chatId].slice(store[chatId].length - maxHistory);\n}\n\nfs.writeFileSync(storePath, JSON.stringify(store, null, 2));\n\nreturn $item;"
+      },
+      "name": "Update Chat History",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Switch Input Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Input Type": {
+      "main": [
+        [
+          {
+            "node": "Execute STT Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute OCR Workflow",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Get Chat History",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Get Chat History": {
+      "main": [
+        [
+          {
+            "node": "Gemini Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat": {
+      "main": [
+        [
+          {
+            "node": "Send Chat Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Chat Response": {
+      "main": [
+        [
+          {
+            "node": "Update Chat History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "4"
+}
