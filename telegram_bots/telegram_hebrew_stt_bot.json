@@ -1,0 +1,173 @@
+{
+  "name": "Hebrew STT Bot (Whisper)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ]
+      },
+      "id": "5f9f3f8d-d7b1-4f8a-8b8a-3e3f6f3f6f3f",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1100,
+        -340
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "{{$env.TELEGRAM_API_KEY}}",
+          "name": "Telegram Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "{{$json.message.voice.file_id}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6",
+      "name": "Is it a voice message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "{{$json.message.voice.file_id}}"
+      },
+      "id": "b2c3d4e5-f6a7-b8c9-d0e1-f2a3b4c5d6e7",
+      "name": "Get Voice Note",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        -660,
+        -340
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "{{$env.TELEGRAM_API_KEY}}",
+          "name": "Telegram Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "bodyContentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "language",
+              "value": "he"
+            },
+            {
+              "name": "file",
+              "isBinary": true,
+              "value": "={{ $binary.data }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c3d4e5f6-a7b8-c9d0-e1f2-a3b4c5d6e7f8",
+      "name": "Whisper STT",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        -440,
+        -340
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "{{$env.OPENAI_API_KEY}}",
+          "name": "OpenAI Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $('Whisper STT').item.json.text }}"
+      },
+      "id": "d4e5f6a7-b8c9-d0e1-f2a3-b4c5d6e7f8g9",
+      "name": "Send Transcription",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        -340
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "{{$env.TELEGRAM_API_KEY}}",
+          "name": "Telegram Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is it a voice message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is it a voice message?": {
+      "main": [
+        [
+          {
+            "node": "Get Voice Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Voice Note": {
+      "main": [
+        [
+          {
+            "node": "Whisper STT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper STT": {
+      "main": [
+        [
+          {
+            "node": "Send Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

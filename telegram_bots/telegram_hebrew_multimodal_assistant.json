@@ -1,0 +1,154 @@
+{
+  "name": "Hebrew Multi-Modal Assistant",
+  "nodes": [
+    {
+      "parameters": { "updates": ["message"] },
+      "id": "trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1, "position": [-1600, -200],
+      "credentials": { "telegramApi": { "id": "{{$env.TELEGRAM_API_KEY}}", "name": "Telegram Credentials" } }
+    },
+    {
+      "parameters": {
+        "operation": "getAll", "tableId": "telegram_users",
+        "filters": { "conditions": [{ "keyName": "telegram_id", "condition": "eq", "keyValue": "={{ $json.message.chat.id }}" }] }
+      },
+      "id": "find_user",
+      "name": "Find User in Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1, "position": [-1380, -200],
+      "credentials": { "supabaseApi": { "id": "{{$env.SUPABASE_CREDENTIALS}}", "name": "Supabase Credentials" } }
+    },
+    {
+      "parameters": { "conditions": { "boolean": [{ "value1": "={{ $json.id }}", "operation": "exists" }] } },
+      "id": "if_user_exists",
+      "name": "If User Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1, "position": [-1160, -200]
+    },
+    {
+      "parameters": { "url": "https://api.openai.com/v1/threads", "method": "POST", "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "OpenAI-Beta", "value": "assistants=v2" }] }, "nodeCredentialType": "openAiApi" },
+      "id": "create_thread",
+      "name": "Create OpenAI Thread",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3, "position": [-940, -80],
+      "credentials": { "openAiApi": { "id": "{{$env.OPENAI_API_KEY}}", "name": "OpenAI Credentials" } }
+    },
+    {
+      "parameters": {
+        "tableId": "telegram_users",
+        "fieldsUi": { "fieldValues": [{ "fieldId": "telegram_id", "fieldValue": "={{ $('Telegram Trigger').item.json.message.chat.id }}" }, { "fieldId": "openai_thread_id", "fieldValue": "={{ $('Create OpenAI Thread').item.json.id }}" }] }
+      },
+      "id": "create_user",
+      "name": "Create User in Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1, "position": [-720, -80],
+      "credentials": { "supabaseApi": { "id": "{{$env.SUPABASE_CREDENTIALS}}", "name": "Supabase Credentials" } }
+    },
+    {
+      "parameters": {}, "id": "merge_user", "name": "Merge User Data",
+      "type": "n8n-nodes-base.merge", "typeVersion": 1, "position": [-940, -200]
+    },
+    {
+      "parameters": {
+        "routing": {
+          "rules": {
+            "values": [
+              { "rule": { "interval": { "field": "{{ $json.message.voice }}" } }, "output": 0 },
+              { "rule": { "interval": { "field": "{{ $json.message.photo || $json.message.document }}" } }, "output": 1 },
+              { "rule": { "interval": { "field": "{{ $json.message.text }}" } }, "output": 2 }
+            ]
+          }
+        }
+      },
+      "id": "router",
+      "name": "Route by Input Type",
+      "type": "n8n-nodes-base.router",
+      "typeVersion": 1, "position": [-720, -200]
+    },
+    {
+      "parameters": { "resource": "file", "fileId": "{{$json.message.voice.file_id}}" },
+      "id": "get_voice_note", "name": "Get Voice Note",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.1, "position": [-500, -400],
+      "credentials": { "telegramApi": { "id": "{{$env.TELEGRAM_API_KEY}}", "name": "Telegram Credentials" } }
+    },
+    {
+      "parameters": { "url": "https://api.openai.com/v1/audio/transcriptions", "authentication": "predefinedCredentialType", "nodeCredentialType": "openAiApi", "sendBody": true, "bodyContentType": "multipart-form-data", "bodyParameters": { "parameters": [{ "name": "model", "value": "whisper-1" }, { "name": "language", "value": "he" }, { "name": "file", "isBinary": true, "value": "={{ $binary.data }}" }] } },
+      "id": "whisper_stt", "name": "Whisper STT",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 3, "position": [-280, -400],
+      "credentials": { "openAiApi": { "id": "{{$env.OPENAI_API_KEY}}", "name": "OpenAI Credentials" } }
+    },
+    {
+      "parameters": { "resource": "file", "fileId": "={{ $json.message.photo ? $json.message.photo[$json.message.photo.length - 1].file_id : $json.message.document.file_id }}" },
+      "id": "get_image", "name": "Get Image/Document",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.1, "position": [-500, -200],
+      "credentials": { "telegramApi": { "id": "{{$env.TELEGRAM_API_KEY}}", "name": "Telegram Credentials" } }
+    },
+    {
+      "parameters": { "url": "{{$env.OCR_API_URL}}", "sendBody": true, "bodyContentType": "multipart-form-data", "bodyParameters": { "parameters": [{ "name": "language", "value": "heb" }, { "name": "file", "isBinary": true, "value": "={{ $binary.data }}" }] } },
+      "id": "ocr_request", "name": "OCR API Request",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 3, "position": [-280, -200]
+    },
+    {
+      "parameters": {}, "id": "merge_input", "name": "Merge Processed Input",
+      "type": "n8n-nodes-base.merge", "typeVersion": 1, "position": [-60, -200]
+    },
+    {
+      "parameters": { "url": "=https://api.openai.com/v1/threads/{{ $('Merge User Data').item.json.openai_thread_id }}/messages", "method": "POST", "sendBody": true, "bodyParameters": { "parameters": [{ "name": "role", "value": "user" }, { "name": "content", "value": "={{ $json.text }}" }] }, "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "OpenAI-Beta", "value": "assistants=v2" }] }, "nodeCredentialType": "openAiApi" },
+      "id": "send_message_to_thread", "name": "Send Message to Thread",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 3, "position": [160, -200],
+      "credentials": { "openAiApi": { "id": "{{$env.OPENAI_API_KEY}}", "name": "OpenAI Credentials" } }
+    },
+    {
+      "parameters": { "url": "=https://api.openai.com/v1/threads/{{ $('Merge User Data').item.json.openai_thread_id }}/runs", "method": "POST", "sendBody": true, "bodyParameters": { "parameters": [{ "name": "assistant_id", "value": "{{$env.OPENAI_ASSISTANT_ID}}" }] }, "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "OpenAI-Beta", "value": "assistants=v2" }] }, "nodeCredentialType": "openAiApi" },
+      "id": "run_assistant", "name": "Run Assistant",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 3, "position": [380, -200],
+      "credentials": { "openAiApi": { "id": "{{$env.OPENAI_API_KEY}}", "name": "OpenAI Credentials" } }
+    },
+    {
+      "parameters": { "delay": 5000 }, "id": "wait", "name": "Wait", "type": "n8n-nodes-base.wait", "typeVersion": 1, "position": [600, -200]
+    },
+    {
+      "parameters": { "url": "=https://api.openai.com/v1/threads/{{ $('Merge User Data').item.json.openai_thread_id }}/messages", "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "OpenAI-Beta", "value": "assistants=v2" }] }, "nodeCredentialType": "openAiApi" },
+      "id": "get_response", "name": "Get Assistant Response",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 3, "position": [820, -200],
+      "credentials": { "openAiApi": { "id": "{{$env.OPENAI_API_KEY}}", "name": "OpenAI Credentials" } }
+    },
+    {
+      "parameters": { "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}", "text": "={{ $json.data[0].content[0].text.value }}" },
+      "id": "send_text_response", "name": "Send Text Response",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1, "position": [1040, -200],
+      "credentials": { "telegramApi": { "id": "{{$env.TELEGRAM_API_KEY}}", "name": "Telegram Credentials" } }
+    }
+  ],
+  "connections": {
+    "trigger": { "main": [[{ "node": "find_user", "type": "main", "index": 0 }]] },
+    "find_user": { "main": [[{ "node": "if_user_exists", "type": "main", "index": 0 }]] },
+    "if_user_exists": {
+      "main": [
+        [{ "node": "merge_user", "type": "main", "index": 0 }],
+        [{ "node": "create_thread", "type": "main", "index": 0 }]
+      ]
+    },
+    "create_thread": { "main": [[{ "node": "create_user", "type": "main", "index": 0 }]] },
+    "create_user": { "main": [[{ "node": "merge_user", "type": "main", "index": 1 }]] },
+    "merge_user": { "main": [[{ "node": "router", "type": "main", "index": 0 }]] },
+    "router": {
+      "main": [
+        [{ "node": "get_voice_note", "type": "main", "index": 0 }],
+        [{ "node": "get_image", "type": "main", "index": 0 }],
+        [{ "node": "merge_input", "type": "main", "index": 2 }]
+      ]
+    },
+    "get_voice_note": { "main": [[{ "node": "whisper_stt", "type": "main", "index": 0 }]] },
+    "whisper_stt": { "main": [[{ "node": "merge_input", "type": "main", "index": 0 }]] },
+    "get_image": { "main": [[{ "node": "ocr_request", "type": "main", "index": 0 }]] },
+    "ocr_request": { "main": [[{ "node": "merge_input", "type": "main", "index": 1 }]] },
+    "merge_input": { "main": [[{ "node": "send_message_to_thread", "type": "main", "index": 0 }]] },
+    "send_message_to_thread": { "main": [[{ "node": "run_assistant", "type": "main", "index": 0 }]] },
+    "run_assistant": { "main": [[{ "node": "wait", "type": "main", "index": 0 }]] },
+    "wait": { "main": [[{ "node": "get_response", "type": "main", "index": 0 }]] },
+    "get_response": { "main": [[{ "node": "send_text_response", "type": "main", "index": 0 }]] }
+  }
+}
