@@ -1,0 +1,121 @@
+{
+  "name": "LLM Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "={{ $webhookUrl.substring($webhookUrl.indexOf('/webhook/') + 9) }}",
+        "responseMode": "onReceived"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "webhook-trigger",
+      "webhookId": "placeholder_webhook_id"
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={{$credentials.Gemini.apiKey}}",
+        "sendBody": true,
+        "body": {
+          "contentType": "json",
+          "content": "={{\"contents\":[{\"parts\":[{\"text\":\"You are a helpful Hebrew-speaking assistant. Please provide a concise and helpful response to the following message, in Hebrew:\\n\\n{{$json.body.text}}\"}]}]}}"
+        },
+        "options": {}
+      },
+      "name": "Get AI Response (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "id": "get_ai_response_gemini",
+      "credentials": {
+        "geminiApi": {
+          "id": "placeholder_gemini_credential_id",
+          "name": "Gemini"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "ai_response_text",
+              "value": "={{$json.candidates[0].content.parts[0].text}}"
+            }
+          ]
+        },
+        "options": {
+          "keepOnlySet": true
+        }
+      },
+      "name": "Set AI Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ],
+      "id": "set_ai_response"
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "id": "respond_to_webhook"
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "get_ai_response_gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_ai_response_gemini": {
+      "main": [
+        [
+          {
+            "node": "set_ai_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set_ai_response": {
+      "main": [
+        [
+          {
+            "node": "respond_to_webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "llm-agent",
+  "meta": {}
+}

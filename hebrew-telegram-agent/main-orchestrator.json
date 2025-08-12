@@ -1,0 +1,485 @@
+{
+  "name": "Main Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "credentials"
+      },
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "telegram-trigger-node",
+      "credentials": {
+        "telegramApi": {
+          "id": "placeholder_credential_id",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "rules": [
+            {
+              "value": "{{$json.message.voice}}",
+              "operation": "propertyExists"
+            },
+            {
+              "value": "{{$json.message.photo}}",
+              "operation": "propertyExists"
+            },
+            {
+              "value": "{{$json.message.document}}",
+              "operation": "propertyExists"
+            },
+            {
+              "value": "{{$json.message.text}}",
+              "operation": "propertyExists"
+            }
+          ]
+        },
+        "stopOnFail": false
+      },
+      "name": "Route by Input Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ],
+      "id": "switch-node"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.STT_AGENT_WEBHOOK_URL}}",
+        "sendBody": true,
+        "body": {
+          "contentType": "json",
+          "content": "={{\"file_id\": \"{{$json.message.voice.file_id}}\"}}"
+        },
+        "options": {}
+      },
+      "name": "Call STT Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        680,
+        200
+      ],
+      "id": "call_stt_agent"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.OCR_AGENT_WEBHOOK_URL}}",
+        "sendBody": true,
+        "body": {
+          "contentType": "json",
+          "content": "={{\"file_id\": \"{{$json.message.photo[$json.message.photo.length-1].file_id}}\", \"mime_type\": \"image/jpeg\"}}"
+        },
+        "options": {}
+      },
+      "name": "Call OCR Agent (Photo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "id": "call_ocr_agent_photo"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.OCR_AGENT_WEBHOOK_URL}}",
+        "sendBody": true,
+        "body": {
+          "contentType": "json",
+          "content": "={{\"file_id\": \"{{$json.message.document.file_id}}\", \"mime_type\": \"{{$json.message.document.mime_type}}\"}}"
+        },
+        "options": {}
+      },
+      "name": "Call OCR Agent (Doc)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        680,
+        400
+      ],
+      "id": "call_ocr_agent_doc"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "user_input_text",
+              "value": "={{$json.message.text}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set Text Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        680,
+        500
+      ],
+      "id": "set_text_input"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "user_input_text",
+              "value": "={{$json.text}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set STT Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        900,
+        200
+      ],
+      "id": "set_stt_input"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "user_input_text",
+              "value": "={{$json.ocr_text}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set OCR Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        900,
+        350
+      ],
+      "id": "set_ocr_input"
+    },
+    {
+      "parameters": {},
+      "name": "Unified Input",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        300
+      ],
+      "id": "unified_input"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.LLM_AGENT_WEBHOOK_URL}}",
+        "sendBody": true,
+        "body": {
+          "contentType": "json",
+          "content": "={{\"text\": \"{{$json.user_input_text}}\"}}"
+        },
+        "options": {}
+      },
+      "name": "Call LLM Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ],
+      "id": "call_llm_agent"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "rules": [
+            {
+              "value": "={{$startNode.json.message.voice}}",
+              "operation": "propertyExists"
+            }
+          ]
+        }
+      },
+      "name": "Respond with Voice?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        300
+      ],
+      "id": "route_response_type"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.TTS_AGENT_WEBHOOK_URL}}",
+        "sendBody": true,
+        "body": {
+          "contentType": "json",
+          "content": "={{\"text\": \"{{$json.ai_response_text}}\"}}"
+        },
+        "options": {}
+      },
+      "name": "Call TTS Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        200
+      ],
+      "id": "call_tts_agent"
+    },
+    {
+      "parameters": {
+        "source": "base64",
+        "sourceKey": "={{$json.audio_base64}}",
+        "fileName": "response.ogg"
+      },
+      "name": "Decode Audio",
+      "type": "n8n-nodes-base.moveBinaryData",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        200
+      ],
+      "id": "decode_audio"
+    },
+    {
+      "parameters": {
+        "authentication": "credentials",
+        "chatId": "={{$startNode.json.message.chat.id}}",
+        "file": {
+          "data": true
+        }
+      },
+      "name": "Send Voice Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        200
+      ],
+      "id": "send_voice_message",
+      "credentials": {
+        "telegramApi": {
+          "id": "placeholder_credential_id",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "credentials",
+        "chatId": "={{$startNode.json.message.chat.id}}",
+        "text": "={{$json.ai_response_text}}",
+        "options": {}
+      },
+      "name": "Send Text Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1780,
+        400
+      ],
+      "id": "send_text_message",
+      "credentials": {
+        "telegramApi": {
+          "id": "placeholder_credential_id",
+          "name": "Telegram"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "telegram-trigger-node": {
+      "main": [
+        [
+          {
+            "node": "switch-node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "switch-node": {
+      "main": [
+        [
+          {
+            "node": "call_stt_agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "call_ocr_agent_photo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "call_ocr_agent_doc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "set_text_input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call_stt_agent": {
+      "main": [
+        [
+          {
+            "node": "set_stt_input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call_ocr_agent_photo": {
+      "main": [
+        [
+          {
+            "node": "set_ocr_input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call_ocr_agent_doc": {
+      "main": [
+        [
+          {
+            "node": "set_ocr_input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set_text_input": {
+      "main": [
+        [
+          {
+            "node": "unified_input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set_stt_input": {
+      "main": [
+        [
+          {
+            "node": "unified_input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set_ocr_input": {
+      "main": [
+        [
+          {
+            "node": "unified_input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "unified_input": {
+      "main": [
+        [
+          {
+            "node": "call_llm_agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call_llm_agent": {
+      "main": [
+        [
+          {
+            "node": "route_response_type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "route_response_type": {
+      "main": [
+        [
+          {
+            "node": "call_tts_agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "send_text_message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call_tts_agent": {
+      "main": [
+        [
+          {
+            "node": "decode_audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "decode_audio": {
+      "main": [
+        [
+          {
+            "node": "send_voice_message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "main-orchestrator",
+  "meta": {}
+}

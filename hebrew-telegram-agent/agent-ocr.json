@@ -1,0 +1,207 @@
+{
+  "name": "OCR Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "={{ $webhookUrl.substring($webhookUrl.indexOf('/webhook/') + 9) }}",
+        "responseMode": "onReceived"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "webhook-trigger",
+      "webhookId": "placeholder_webhook_id"
+    },
+    {
+      "parameters": {
+        "authentication": "credentials",
+        "resource": "file",
+        "operation": "getFile",
+        "fileId": "={{$json.body.file_id}}"
+      },
+      "name": "Get File Path",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ],
+      "id": "get_file_path",
+      "credentials": {
+        "telegramApi": {
+          "id": "placeholder_credential_id",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/file/bot{{$credentials.Telegram.apiKey}}/{{$json.filePath}}",
+        "response": {
+          "response": {
+            "format": "file"
+          }
+        }
+      },
+      "name": "Download File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "id": "download_file"
+    },
+    {
+      "parameters": {
+        "mode": "base64"
+      },
+      "name": "Convert to Base64",
+      "type": "n8n-nodes-base.moveBinaryData",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "id": "convert_to_base64"
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key={{$credentials.Gemini.apiKey}}",
+        "sendBody": true,
+        "body": {
+          "contentType": "json",
+          "content": "={{\"contents\":[{\"parts\":[{\"text\":\"Extract all Hebrew text from this image, preserving formatting and line breaks.\"},{\"inline_data\":{\"mime_type\":\"{{$json.body.mime_type || 'image/jpeg'}}\",\"data\":\"\"+$json.data+\"\"}}]}]}}"
+        },
+        "options": {}
+      },
+      "name": "OCR with Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "id": "ocr_with_gemini",
+      "credentials": {
+        "geminiApi": {
+          "id": "placeholder_gemini_credential_id",
+          "name": "Gemini"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "ocr_text",
+              "value": "={{$json.candidates[0].content.parts[0].text}}"
+            }
+          ]
+        },
+        "options": {
+          "keepOnlySet": true
+        }
+      },
+      "name": "Set OCR Text",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        300
+      ],
+      "id": "set_ocr_text"
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        300
+      ],
+      "id": "respond_to_webhook"
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "get_file_path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_file_path": {
+      "main": [
+        [
+          {
+            "node": "download_file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "download_file": {
+      "main": [
+        [
+          {
+            "node": "convert_to_base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "convert_to_base64": {
+      "main": [
+        [
+          {
+            "node": "ocr_with_gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ocr_with_gemini": {
+      "main": [
+        [
+          {
+            "node": "set_ocr_text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set_ocr_text": {
+      "main": [
+        [
+          {
+            "node": "respond_to_webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "ocr-agent",
+  "meta": {}
+}

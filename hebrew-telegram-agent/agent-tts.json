@@ -1,0 +1,115 @@
+{
+  "name": "TTS Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "={{ $webhookUrl.substring($webhookUrl.indexOf('/webhook/') + 9) }}",
+        "responseMode": "onReceived"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "webhook-trigger",
+      "webhookId": "placeholder_webhook_id"
+    },
+    {
+      "parameters": {
+        "url": "=https://texttospeech.googleapis.com/v1/text:synthesize?key={{$env.GOOGLE_API_KEY}}",
+        "sendBody": true,
+        "body": {
+          "contentType": "json",
+          "content": "={{\"input\":{\"text\":\"{{$json.body.text}}\"},\"voice\":{\"languageCode\":\"he-IL\",\"name\":\"he-IL-Wavenet-A\"},\"audioConfig\":{\"audioEncoding\":\"OGG_OPUS\"}}}"
+        },
+        "options": {}
+      },
+      "name": "Synthesize Speech (Google TTS)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "id": "google_tts"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "audio_base64",
+              "value": "={{$json.audioContent}}"
+            }
+          ]
+        },
+        "options": {
+          "keepOnlySet": true
+        }
+      },
+      "name": "Set Audio Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ],
+      "id": "set_audio_data"
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "id": "respond_to_webhook"
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "google_tts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "google_tts": {
+      "main": [
+        [
+          {
+            "node": "set_audio_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set_audio_data": {
+      "main": [
+        [
+          {
+            "node": "respond_to_webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "tts-agent",
+  "meta": {}
+}
